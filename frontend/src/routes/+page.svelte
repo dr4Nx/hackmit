@@ -2,7 +2,7 @@
     let recipe = "";
 
     const runInference = async () => {
-        const response = await fetch(`http://127.0.0.1:8000/extract-steps`, {
+        const response = await fetch(`http://127.0.0.1:8000/extract-metadata`, {
             method: "POST",
             body: JSON.stringify({
                 recipe,
@@ -12,7 +12,9 @@
             },
         });
 
-        // const { prompt, image_url } = await response.json();
+        const { data } = await response.json();
+
+        console.log(data)
 
         // console.log("prompt", prompt, "image_url", image_url);
     };
