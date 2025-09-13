@@ -19,3 +19,5 @@ env/
 
 # Logs
 *.log
+
+node_modules/
