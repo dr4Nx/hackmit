@@ -13,8 +13,6 @@ const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY ?? (() => { throw new Erro
 const PORT = parseInt(process.env.PORT || '3000');
 const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
 
-/* CHANGE 1: Use fast array for photos (avoid Map + sorting).
-   This reduces latency for getting the latest photo: */
 const photos = []; // Latest photo is always photos[photos.length - 1]
 
 class VideoStreamApp extends AppServer {
@@ -52,8 +50,6 @@ class VideoStreamApp extends AppServer {
          // Broadcast the full spoken text to frontend
          this.broadcastVoiceDetected(data.text);
 
-         /* CHANGE 2: Photo capture called immediately, no await, so that event loop remains free.
-            This is already present—keeping for maximum instant dispatch: */
          this.takePhoto(session, userId, data.text).catch(error => {
            this.logger.error(`Photo capture error: ${error}`);
          });
@@ -63,14 +59,10 @@ class VideoStreamApp extends AppServer {
     this.addCleanupHandler(unsubscribe);
   }
 
-   /* CHANGE 3: Photo metadata and buffer pushed directly to array.
-      No Map lookups—immediate access in all endpoints. */
    async takePhoto(session, userId, spokenText) {
      try {
        this.logger.info(`📸 Photo request sent for user ${userId}`);
 
-       /* CHANGE 4: Capture photo as fast as MentraOS SDK allows (can't optimize this client-side).
-          Documentation: 'Ultra-low latency' but still requires time for device hardware[1]. */
        const photo = await session.camera.requestPhoto();
 
        this.logger.info(`📸 Photo received, timestamp: ${photo.timestamp}`);
@@ -92,7 +84,6 @@ class VideoStreamApp extends AppServer {
        // UI feedback
        session.layouts.showTextWall("✅ Photo captured!");
 
-       // CHANGE 5: Immediate WebSocket broadcast with spoken text
        this.broadcastPhotoUpdate(photoData, spokenText);
 
        // NEW: Call Python backend for AI analysis
@@ -160,7 +151,6 @@ class VideoStreamApp extends AppServer {
    }
 
   broadcastPhotoUpdate(photoData, spokenText) {
-    //CHANGE 6: Add size and spoken text to broadcast for instant frontend grid update
     const quickMessage = JSON.stringify({
       type: 'photo_captured',
       data: {
