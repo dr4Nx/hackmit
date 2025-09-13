@@ -1,10 +1,16 @@
 from typing import Union
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import anthropic
 
 
 app = FastAPI()
+
+
+class InferenceBody(BaseModel):
+    prompt: str
+    image_url: str
 
 
 app.add_middleware(
@@ -22,7 +28,7 @@ def get_health():
 
 
 @app.post("/inference")
-def post_inference(prompt: str = "", image_url: str = ""):
+def post_test_inference(body: InferenceBody):
     client = anthropic.Anthropic()
     message = client.messages.create(
         model="claude-opus-4-1-20250805",
@@ -35,10 +41,10 @@ def post_inference(prompt: str = "", image_url: str = ""):
                         "type": "image",
                         "source": {
                             "type": "url",
-                            "url": image_url,  # TODO: image url
+                            "url": body.image_url,  # TODO: image url
                         },
                     },
-                    {"type": "text", "text": prompt},
+                    {"type": "text", "text": body.prompt},
                 ],
             }
         ],
@@ -48,5 +54,5 @@ def post_inference(prompt: str = "", image_url: str = ""):
 
 
 @app.post("/test-inference")
-def post_test_inference(prompt: str = "", image_url: str = ""):
-    return {"prompt": prompt, "image_url": image_url}
+def post_test_inference(body: InferenceBody):
+    return {"prompt": body.prompt, "image_url": body.image_url}
