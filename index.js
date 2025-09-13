@@ -11,6 +11,7 @@ dotenv.config();
 const PACKAGE_NAME = process.env.PACKAGE_NAME ?? (() => { throw new Error('PACKAGE_NAME is not set in .env file'); })();
 const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY ?? (() => { throw new Error('MENTRAOS_API_KEY is not set in .env file'); })();
 const PORT = parseInt(process.env.PORT || '3000');
+const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
 
 /* CHANGE 1: Use fast array for photos (avoid Map + sorting).
    This reduces latency for getting the latest photo: */
@@ -42,7 +43,7 @@ class VideoStreamApp extends AppServer {
 
     const unsubscribe = session.events.onTranscription(data => {
       if (!data.isFinal) return;
-      const spokenText = data.text.toLowerCase().trim();
+      const spokenText = data.text.toLowerCase().trim().replace(/,/g, "");
       this.logger.debug(`Heard: "${spokenText}"`);
        if (spokenText.includes('hey little chef')) {
          this.logger.info("🎤 Voice activation phrase detected!");
@@ -83,7 +84,8 @@ class VideoStreamApp extends AppServer {
          filename: photo.filename,
          size: photo.size,
          userId,
-         prompt: spokenText
+         prompt: spokenText,
+         aiAnalysis: null // Will be filled by AI call
        };
        photos.push(photoData);
 
@@ -92,6 +94,25 @@ class VideoStreamApp extends AppServer {
 
        // CHANGE 5: Immediate WebSocket broadcast with spoken text
        this.broadcastPhotoUpdate(photoData, spokenText);
+
+       // NEW: Call Python backend for AI analysis
+       const fullImageUrl = `https://boilingly-unironed-sharell.ngrok-free.app/api/photo/${photo.requestId}`;
+       this.logger.info(`🤖 Starting AI analysis...`);
+       this.logger.info(`📸 Full image URL being sent to Python backend: ${fullImageUrl}`);
+       this.logger.info(`📸 Photo requestId: ${photo.requestId}`);
+       this.logger.info(`📸 Photo exists in photos array: ${photos.some(p => p.requestId === photo.requestId)}`);
+       session.layouts.showTextWall("🤖 Analyzing with AI...");
+       
+       const aiAnalysis = await this.callPythonBackend(fullImageUrl, spokenText);
+       
+       // Update photo data with AI analysis
+       photoData.aiAnalysis = aiAnalysis;
+       
+       // Broadcast AI analysis update
+       this.broadcastAIAnalysis(photoData);
+
+       // UI feedback
+       session.layouts.showTextWall("✅ AI analysis complete!");
 
      } catch (error) {
        this.logger.error(`Error taking photo: ${error}`);
@@ -157,8 +178,62 @@ class VideoStreamApp extends AppServer {
     });
   }
 
+  /**
+   * Broadcast AI analysis update to frontend
+   */
+  broadcastAIAnalysis(photoData) {
+    const message = JSON.stringify({
+      type: 'ai_analysis',
+      data: {
+        requestId: photoData.requestId,
+        aiAnalysis: photoData.aiAnalysis,
+        prompt: photoData.prompt
+      }
+    });
+    this.wsClients.forEach(client => {
+      if (client.readyState === 1) {
+        client.send(message);
+      }
+    });
+  }
+
   async onStop(sessionId, userId, reason) {
     this.logger.info(`Session stopped for user ${userId}, reason: ${reason}`);
+  }
+
+  /**
+   * Call Python backend for AI analysis
+   */
+  async callPythonBackend(imageUrl, prompt) {
+    try {
+      this.logger.info(`🤖 Calling Python backend for AI analysis`);
+      this.logger.info(`📸 Image URL: ${imageUrl}`);
+      this.logger.info(`💬 Prompt: ${prompt}`);
+
+      const response = await fetch(`${PYTHON_BACKEND_URL}/inference`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_url: imageUrl,
+          prompt: prompt
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Python backend error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      this.logger.info(`AI analysis received: ${data.data.substring(0, 100)}...`);
+      this.logger.info(`FULL AI ANALYSIS RESULT: ${data.data}`);
+      
+      return data.data;
+    } catch (error) {
+      this.logger.error(`❌ Python backend call failed: ${error.message}`);
+      return `AI analysis failed: ${error.message}`;
+    }
   }
 
   setupRoutes() {
@@ -253,8 +328,8 @@ class VideoStreamApp extends AppServer {
             <h1>📸 MentraOS Video Stream</h1>
             
             <div class="status">
-              <p>🎤 Say "hello chef" to take photos with your MentraOS glasses!</p>
-              <p>📸 Photos will appear below automatically</p>
+              <p>🎤 Say "hey little chef" to take photos with your MentraOS glasses!</p>
+              <p>📸 Photos will appear below automatically with AI analysis</p>
               <p>🔗 Image URLs are displayed for each photo</p>
             </div>
 
@@ -309,6 +384,9 @@ class VideoStreamApp extends AppServer {
                   console.log('Photo captured! Showing URL immediately');
                   showPhotoUrl(message.data);
                   addPhotoToGrid(message.data);
+                } else if (message.type === 'ai_analysis') {
+                  console.log('AI analysis received!');
+                  updatePhotoWithAI(message.data);
                 }
               };
               
@@ -384,6 +462,7 @@ class VideoStreamApp extends AppServer {
               // Add to grid (prepend to show newest first)
               const photoItem = document.createElement('div');
               photoItem.className = 'photo-item';
+              photoItem.id = \`photo-\${photoData.requestId}\`;
               photoItem.innerHTML = \`
                 <img src="\${photoData.url}" alt="Photo \${photoData.requestId}">
                 <div class="photo-info">
@@ -393,6 +472,9 @@ class VideoStreamApp extends AppServer {
                   <div style="margin-top: 8px; padding: 4px; background: #e8f4fd; border-radius: 3px; font-size: 11px; font-style: italic;">
                     💬 "\${photoData.prompt || 'No prompt'}"
                   </div>
+                  <div id="ai-analysis-\${photoData.requestId}" style="margin-top: 8px; padding: 4px; background: #f0f8ff; border-radius: 3px; font-size: 10px; display: none;">
+                    🤖 <strong>AI Analysis:</strong> <span id="ai-text-\${photoData.requestId}">Analyzing...</span>
+                  </div>
                   <div style="margin-top: 8px; padding: 4px; background: #f0f0f0; border-radius: 3px; font-size: 10px; word-break: break-all;">
                     🔗 <a href="\${photoData.url}" target="_blank">\${photoData.url}</a>
                   </div>
@@ -401,6 +483,18 @@ class VideoStreamApp extends AppServer {
               
               // Insert at the beginning of the grid
               photoGrid.insertBefore(photoItem, photoGrid.firstChild);
+            }
+
+            // Update photo with AI analysis
+            function updatePhotoWithAI(data) {
+              const aiAnalysisDiv = document.getElementById(\`ai-analysis-\${data.requestId}\`);
+              const aiTextSpan = document.getElementById(\`ai-text-\${data.requestId}\`);
+              
+              if (aiAnalysisDiv && aiTextSpan) {
+                aiTextSpan.textContent = data.aiAnalysis;
+                aiAnalysisDiv.style.display = 'block';
+                console.log('AI analysis updated for photo:', data.requestId);
+              }
             }
             
             // Fallback polling every 2 seconds
