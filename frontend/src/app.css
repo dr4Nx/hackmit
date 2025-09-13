@@ -1,30 +1,56 @@
 @import "tailwindcss";
 
+@font-face {
+    font-family: "Signifier"; /* The name you'll use in CSS */
+    src: url("fonts/signifier/Signifier-Regular.otf") format("otf");
+    font-weight: normal;
+    font-style: normal;
+}
+
 @layer base {
-  html {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  }
-  
-  body {
-    @apply bg-gradient-to-br from-slate-50 to-gray-100 text-gray-900 antialiased;
-    line-height: 1.6;
-  }
-  
-  * {
-    @apply scroll-smooth;
-  }
+    html {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+            Roboto, sans-serif;
+    }
+
+    body {
+        @apply bg-gradient-to-br from-slate-50 to-gray-100 text-gray-900 antialiased;
+        line-height: 1.6;
+    }
+
+    * {
+        @apply scroll-smooth;
+    }
 }
 
 @layer components {
-  .btn-link {
-    @apply text-purple-600 hover:text-purple-700 underline-offset-2 hover:underline transition-all duration-300;
-  }
-  
-  .gradient-text {
-    @apply bg-gradient-to-r from-purple-600 via-blue-600 to-indigo-600 bg-clip-text text-transparent;
-  }
-  
-  .glass-card {
-    @apply bg-white/80 backdrop-blur-sm border border-white/20 shadow-xl;
-  }
+    .btn-link {
+        @apply text-purple-600 hover:text-purple-700 underline-offset-2 hover:underline transition-all duration-300;
+    }
+
+    .gradient-text {
+        @apply bg-gradient-to-r from-purple-600 via-blue-600 to-indigo-600 bg-clip-text text-transparent;
+    }
+
+    .glass-card {
+        @apply bg-white/80 backdrop-blur-sm border border-white/20 shadow-xl;
+    }
+}
+
+@theme {
+    --color-base: oklch(0.9761 0 0);
+    --color-grey1: oklch(0.7117 0.0019 247.85);
+    --color-dark: oklch(0.1998 0.002 106.58);
+    --font-signifier: "Signifier";
+    /* --color-grey1 */
+    /* --font-display: "Satoshi", "sans-serif";
+    --breakpoint-3xl: 120rem;
+    --color-avocado-100: oklch(0.99 0 0);
+    --color-avocado-200: oklch(0.98 0.04 113.22);
+    --color-avocado-300: oklch(0.94 0.11 115.03);
+    --color-avocado-400: oklch(0.92 0.19 114.08);
+    --color-avocado-500: oklch(0.84 0.18 117.33);
+    --color-avocado-600: oklch(0.53 0.12 118.34);
+    --ease-fluid: cubic-bezier(0.3, 0, 0, 1);
+    --ease-snappy: cubic-bezier(0.2, 0, 0, 1); ... */
 }
