@@ -3,16 +3,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import anthropic
+from dotenv import dotenv_values
+import json
 
 
 app = FastAPI()
-
-
-class InferenceBody(BaseModel):
-    prompt: str
-    image_url: str
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],  # Or specify your frontend URL
@@ -20,6 +15,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+config = dotenv_values(".env")
+
+
+client = anthropic.Anthropic(api_key=config["ANTHROPIC_API_KEY"])
+recipe_list = []
+recipe_counter = 0
+
+
+class InferenceBody(BaseModel):
+    prompt: str
+    image_url: str
+
+
+class TitleBody(BaseModel):
+    recipe: str
 
 
 @app.get("/health")
@@ -29,7 +40,6 @@ def get_health():
 
 @app.post("/inference")
 def post_test_inference(body: InferenceBody):
-    client = anthropic.Anthropic()
     message = client.messages.create(
         model="claude-opus-4-1-20250805",
         max_tokens=1024 * 8,
@@ -50,9 +60,58 @@ def post_test_inference(body: InferenceBody):
         ],
     )
 
-    return {"photo": body.image_url, "data": message}
+    return {"data": message.content[0].text}
 
 
+@app.post("/title")
+def post_title(body: TitleBody):
+    message = client.messages.create(
+        model="claude-opus-4-1-20250805",
+        max_tokens=1024 * 8,
+        messages=[
+            {
+                "role": "user",
+                "content": f"You are an expert chef. You are given the recipe for a dish. Your task is to generate the name of the dish. Only output the name (example: Chicken Alfredo).\n\n### Recipe\n\n{body.recipe}",
+            }
+        ],
+    )
+
+    return {"data": message.content[0].text}
+
+
+@app.post("/extract-steps")
+def post_extract_steps(body: TitleBody):
+    message = client.messages.create(
+        model="claude-opus-4-1-20250805",
+        max_tokens=1024 * 8,
+        messages=[
+            {
+                "role": "user",
+                "content": f"You are an expert chef. You are given the recipe for a dish. Your task is to extract the steps of the recipe in JSON format with keys: 'recipe' (list). Only output the JSON without the markdown formatting.\n\n### Recipe\n\n{body.recipe}",
+            }
+        ],
+    )
+
+    global recipe_list
+    recipe_list = json.loads(message.content[0].text)["recipe"]
+
+    return {"data": message.content[0].text}
+
+
+@app.get("/next-step")
+def get_next_step():
+    global recipe_counter
+    recipe_counter += 1
+    if recipe_counter >= len(recipe_list):
+        return {"data": "You're done!"}
+    return {"data": recipe_list[recipe_counter]}
+
+
+
+
+
+
+# TODO: delete test-inference
 @app.post("/test-inference")
 def post_test_inference(body: InferenceBody):
     return {"prompt": body.prompt, "image_url": body.image_url}
