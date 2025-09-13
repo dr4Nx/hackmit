@@ -50,7 +50,7 @@ def post_test_inference(body: InferenceBody):
         ],
     )
 
-    return {"data": message}
+    return {"photo": body.image_url, "data": message}
 
 
 @app.post("/test-inference")
