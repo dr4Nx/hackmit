@@ -39,7 +39,7 @@ def get_health():
 
 
 @app.post("/inference")
-def post_test_inference(body: InferenceBody):
+def post_inference(body: InferenceBody):
     message = client.messages.create(
         model="claude-opus-4-1-20250805",
         max_tokens=1024 * 8,
@@ -63,7 +63,7 @@ def post_test_inference(body: InferenceBody):
     return {"data": message.content[0].text}
 
 
-@app.post("/title")
+@app.post("/extract-metadata")
 def post_title(body: TitleBody):
     message = client.messages.create(
         model="claude-opus-4-1-20250805",
@@ -71,7 +71,7 @@ def post_title(body: TitleBody):
         messages=[
             {
                 "role": "user",
-                "content": f"You are an expert chef. You are given the recipe for a dish. Your task is to generate the name of the dish. Only output the name (example: Chicken Alfredo).\n\n### Recipe\n\n{body.recipe}",
+                "content": f"You are an expert chef. You are given the recipe for a dish. Your task is to output the details of the meal in JSON format with keys: 'dish_name' (str), 'preparation_duration_minutes' (int), 'preparation_difficulty' (str), 'serving_number_of_people' (int), 'brief_description' (str), 'ingredients' (list), 'nutritional_value' (list). Only output the JSON without the markdown formatting.\n\n### Recipe\n\n{body.recipe}",
             }
         ],
     )
