@@ -2,6 +2,8 @@ import pkg from '@mentra/sdk';
 const { AppServer, AppSession } = pkg;
 import express from 'express';
 import dotenv from 'dotenv';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
 
 // Load environment variables
 dotenv.config();
@@ -10,6 +12,9 @@ const PACKAGE_NAME = process.env.PACKAGE_NAME ?? (() => { throw new Error('PACKA
 const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY ?? (() => { throw new Error('MENTRAOS_API_KEY is not set in .env file'); })();
 const PORT = parseInt(process.env.PORT || '3000');
 
+/* CHANGE 1: Use fast array for photos (avoid Map + sorting).
+   This reduces latency for getting the latest photo: */
+const photos = []; // Latest photo is always photos[photos.length - 1]
 
 class VideoStreamApp extends AppServer {
   constructor() {
@@ -19,55 +24,135 @@ class VideoStreamApp extends AppServer {
       port: PORT,
       mentraOSWebsocketUrl: 'wss://uscentralapi.mentra.glass/app-ws',
     });
-    this.photos = new Map(); 
+    this.wsClients = new Set();
     this.setupRoutes();
+    this.setupWebSocket();
   }
 
-  /**
-   * Handle new session creation and button press events
-   */
   async onSession(session, sessionId, userId) {
     this.logger.info(`Session started for user ${userId}`);
 
-    // Add error handling for session events
-    session.events.onError((error) => {
+    session.events.onError(error => {
       this.logger.error(`Session error for user ${userId}:`, error);
     });
-    
+
     session.events.onDisconnected(() => {
       this.logger.info(`Session disconnected for user ${userId}`);
     });
 
-    // Handle button presses
-    session.events.onButtonPress(async (button) => {
-      this.logger.info(`Button pressed: ${button.buttonId}, type: ${button.pressType}`);
+    const unsubscribe = session.events.onTranscription(data => {
+      if (!data.isFinal) return;
+      const spokenText = data.text.toLowerCase().trim();
+      this.logger.debug(`Heard: "${spokenText}"`);
+       if (spokenText.includes('hey little chef')) {
+         this.logger.info("🎤 Voice activation phrase detected!");
+         this.logger.info(`📝 Full spoken text: "${data.text}"`);
 
-      if (button.pressType === 'short') {
-        // Short press - take a photo
-        try {
-          const photo = await session.camera.requestPhoto();
-          this.logger.info(`Photo taken for user ${userId}, timestamp: ${photo.timestamp}`);
-          
-          // Store the photo
-          this.photos.set(userId, {
-            requestId: photo.requestId,
-            buffer: photo.buffer,
-            timestamp: photo.timestamp,
-            userId: userId,
-            mimeType: photo.mimeType,
-            filename: photo.filename,
-            size: photo.size
-          });
-          
-          this.logger.info(`Photo stored for user ${userId}`);
-          
-        } catch (error) {
-          this.logger.error(`Error taking photo: ${error}`);
-        }
-      } else if (button.pressType === 'long') {
-        // Long press - start/stop continuous photo stream
-        this.logger.info("Long press detected - toggle continuous stream");
-        // TODO: Implement continuous streaming
+         // Broadcast the full spoken text to frontend
+         this.broadcastVoiceDetected(data.text);
+
+         /* CHANGE 2: Photo capture called immediately, no await, so that event loop remains free.
+            This is already present—keeping for maximum instant dispatch: */
+         this.takePhoto(session, userId, data.text).catch(error => {
+           this.logger.error(`Photo capture error: ${error}`);
+         });
+       }
+    });
+
+    this.addCleanupHandler(unsubscribe);
+  }
+
+   /* CHANGE 3: Photo metadata and buffer pushed directly to array.
+      No Map lookups—immediate access in all endpoints. */
+   async takePhoto(session, userId, spokenText) {
+     try {
+       this.logger.info(`📸 Photo request sent for user ${userId}`);
+
+       /* CHANGE 4: Capture photo as fast as MentraOS SDK allows (can't optimize this client-side).
+          Documentation: 'Ultra-low latency' but still requires time for device hardware[1]. */
+       const photo = await session.camera.requestPhoto();
+
+       this.logger.info(`📸 Photo received, timestamp: ${photo.timestamp}`);
+
+       // Store photo data: buffer + metadata + spoken text
+       const photoData = {
+         requestId: photo.requestId,
+         buffer: photo.buffer,
+         timestamp: photo.timestamp,
+         mimeType: photo.mimeType,
+         filename: photo.filename,
+         size: photo.size,
+         userId,
+         prompt: spokenText
+       };
+       photos.push(photoData);
+
+       // UI feedback
+       session.layouts.showTextWall("✅ Photo captured!");
+
+       // CHANGE 5: Immediate WebSocket broadcast with spoken text
+       this.broadcastPhotoUpdate(photoData, spokenText);
+
+     } catch (error) {
+       this.logger.error(`Error taking photo: ${error}`);
+       session.layouts.showTextWall("❌ Photo failed");
+     }
+   }
+
+  setupWebSocket() {
+    const server = createServer();
+    this.wss = new WebSocketServer({ server });
+
+    this.wss.on('connection', ws => {
+      this.wsClients.add(ws);
+      this.logger.info('WebSocket client connected');
+
+      ws.on('close', () => {
+        this.wsClients.delete(ws);
+        this.logger.info('WebSocket client disconnected');
+      });
+
+      ws.on('error', error => {
+        this.logger.error('WebSocket error:', error);
+        this.wsClients.delete(ws);
+      });
+    });
+    server.listen(PORT + 1, () => {
+      this.logger.info(`WebSocket server running on port ${PORT + 1}`);
+    });
+  }
+
+   /* Broadcast voice detected with full spoken text */
+   broadcastVoiceDetected(fullSpokenText) {
+     const message = JSON.stringify({
+       type: 'voice_detected',
+       data: { 
+         message: 'Voice detected! Taking photo...',
+         spokenText: fullSpokenText
+       }
+     });
+     this.wsClients.forEach(client => {
+       if (client.readyState === 1) {
+         client.send(message);
+       }
+     });
+   }
+
+  broadcastPhotoUpdate(photoData, spokenText) {
+    //CHANGE 6: Add size and spoken text to broadcast for instant frontend grid update
+    const quickMessage = JSON.stringify({
+      type: 'photo_captured',
+      data: {
+        requestId: photoData.requestId,
+        timestamp: photoData.timestamp.getTime(),
+        url: `/api/photo/${photoData.requestId}`,
+        size: photoData.size,
+        prompt: spokenText
+      }
+    });
+    this.wsClients.forEach(client => {
+      if (client.readyState === 1) {
+        client.send(quickMessage);
       }
     });
   }
@@ -76,17 +161,10 @@ class VideoStreamApp extends AppServer {
     this.logger.info(`Session stopped for user ${userId}, reason: ${reason}`);
   }
 
-
-  /**
-   * Set up API routes and web interface
-   */
   setupRoutes() {
     const app = this.getExpressApp();
-
-    // Serve static files from public directory
     app.use(express.static('public'));
 
-    // Main web interface - shows video stream
     app.get('/', (req, res) => {
       res.send(`
         <!DOCTYPE html>
@@ -175,8 +253,13 @@ class VideoStreamApp extends AppServer {
             <h1>📸 MentraOS Video Stream</h1>
             
             <div class="status">
-              <p>📱 Connect your MentraOS glasses and press the button to take photos!</p>
+              <p>🎤 Say "hello chef" to take photos with your MentraOS glasses!</p>
               <p>📸 Photos will appear below automatically</p>
+              <p>🔗 Image URLs are displayed for each photo</p>
+            </div>
+
+            <div class="spoken-text" id="spokenText" style="text-align: center; margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; border-left: 4px solid #007bff; font-style: italic; display: none;">
+              <strong>You said:</strong> <span id="spokenTextContent"></span>
             </div>
 
             <div class="controls">
@@ -188,7 +271,11 @@ class VideoStreamApp extends AppServer {
               <h3>Latest Photo Stream</h3>
               <img id="latestPhoto" class="video-stream" src="/api/latest-photo-image" alt="No photo yet" style="display: none;">
               <div id="noPhoto" style="text-align: center; padding: 50px; color: #666;">
-                No photos yet. Press the button on your glasses!
+                No photos yet. Say "computer" to take a photo!
+              </div>
+              <div id="latestPhotoUrl" style="text-align: center; margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px; display: none;">
+                <strong>Latest Photo URL:</strong><br>
+                <a id="latestPhotoLink" href="#" target="_blank" style="color: #007bff; word-break: break-all;">Loading...</a>
               </div>
             </div>
 
@@ -200,7 +287,123 @@ class VideoStreamApp extends AppServer {
           <script>
             let photoCount = 0;
             
-            // Refresh photos every 2 seconds
+            // Connect to WebSocket for real-time updates
+            let ws = null;
+            function connectWebSocket() {
+              const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+              const wsUrl = \`\${protocol}//\${window.location.hostname}:3001\`;
+              
+              ws = new WebSocket(wsUrl);
+              
+              ws.onopen = function() {
+                console.log('WebSocket connected');
+              };
+              
+              ws.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                console.log('WebSocket message received:', message);
+                if (message.type === 'voice_detected') {
+                  console.log('Voice detected! Spoken text:', message.data.spokenText);
+                  showVoiceFeedback(message.data.spokenText);
+                } else if (message.type === 'photo_captured') {
+                  console.log('Photo captured! Showing URL immediately');
+                  showPhotoUrl(message.data);
+                  addPhotoToGrid(message.data);
+                }
+              };
+              
+              ws.onclose = function() {
+                console.log('WebSocket disconnected, reconnecting...');
+                setTimeout(connectWebSocket, 1000);
+              };
+              
+              ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+              };
+            }
+            
+            // Start WebSocket connection
+            connectWebSocket();
+            
+            // Show immediate feedback when voice is detected
+            function showVoiceFeedback(spokenText) {
+              console.log('showVoiceFeedback called with:', spokenText);
+              const status = document.querySelector('.status');
+              const spokenTextDiv = document.getElementById('spokenText');
+              const spokenTextContent = document.getElementById('spokenTextContent');
+              
+              console.log('Elements found:', { status, spokenTextDiv, spokenTextContent });
+              
+              // Show the spoken text
+              if (spokenText) {
+                console.log('Setting spoken text:', spokenText);
+                spokenTextContent.textContent = spokenText;
+                spokenTextDiv.style.display = 'block';
+              } else {
+                console.log('No spoken text provided');
+              }
+              
+              // Show status message
+              const originalHTML = status.innerHTML;
+              status.innerHTML = '<p style="color: #28a745; font-weight: bold;">🎤 Voice detected! Taking photo...</p>';
+              setTimeout(() => {
+                status.innerHTML = originalHTML;
+              }, 3000);
+            }
+            
+            // Show photo URL immediately (before image loads)
+            function showPhotoUrl(photoData) {
+              const latestPhotoUrl = document.getElementById('latestPhotoUrl');
+              const latestPhotoLink = document.getElementById('latestPhotoLink');
+              const fullUrl = window.location.origin + photoData.url;
+              
+              latestPhotoLink.href = photoData.url;
+              latestPhotoLink.textContent = fullUrl;
+              latestPhotoUrl.style.display = 'block';
+              
+              // Show success message
+              const status = document.querySelector('.status');
+              const originalHTML = status.innerHTML;
+              status.innerHTML = '<p style="color: #28a745; font-weight: bold;">✅ Photo captured! URL ready below.</p>';
+              setTimeout(() => {
+                status.innerHTML = originalHTML;
+              }, 3000);
+            }
+            
+            // Add photo to grid without polling
+            function addPhotoToGrid(photoData) {
+              const photoGrid = document.getElementById('photoGrid');
+              const latestPhoto = document.getElementById('latestPhoto');
+              const noPhoto = document.getElementById('noPhoto');
+              
+              // Update latest photo
+              latestPhoto.src = photoData.url;
+              latestPhoto.style.display = 'block';
+              noPhoto.style.display = 'none';
+              
+              // Add to grid (prepend to show newest first)
+              const photoItem = document.createElement('div');
+              photoItem.className = 'photo-item';
+              photoItem.innerHTML = \`
+                <img src="\${photoData.url}" alt="Photo \${photoData.requestId}">
+                <div class="photo-info">
+                  <div>📅 \${new Date(photoData.timestamp).toLocaleString()}</div>
+                  <div>🆔 \${photoData.requestId.substring(0, 8)}...</div>
+                  <div>📏 \${Math.round(photoData.size / 1024)}KB</div>
+                  <div style="margin-top: 8px; padding: 4px; background: #e8f4fd; border-radius: 3px; font-size: 11px; font-style: italic;">
+                    💬 "\${photoData.prompt || 'No prompt'}"
+                  </div>
+                  <div style="margin-top: 8px; padding: 4px; background: #f0f0f0; border-radius: 3px; font-size: 10px; word-break: break-all;">
+                    🔗 <a href="\${photoData.url}" target="_blank">\${photoData.url}</a>
+                  </div>
+                </div>
+              \`;
+              
+              // Insert at the beginning of the grid
+              photoGrid.insertBefore(photoItem, photoGrid.firstChild);
+            }
+            
+            // Fallback polling every 2 seconds
             setInterval(refreshPhotos, 2000);
             
             async function refreshPhotos() {
@@ -211,13 +414,21 @@ class VideoStreamApp extends AppServer {
                 const photoGrid = document.getElementById('photoGrid');
                 const latestPhoto = document.getElementById('latestPhoto');
                 const noPhoto = document.getElementById('noPhoto');
+                const latestPhotoUrl = document.getElementById('latestPhotoUrl');
+                const latestPhotoLink = document.getElementById('latestPhotoLink');
                 
                 if (photos.length > 0) {
                   // Show latest photo
                   const latest = photos[0];
-                  latestPhoto.src = \`/api/photo/\${latest.requestId}\`;
+                  const photoUrl = \`/api/photo/\${latest.requestId}\`;
+                  latestPhoto.src = photoUrl;
                   latestPhoto.style.display = 'block';
                   noPhoto.style.display = 'none';
+                  
+                  // Show latest photo URL
+                  latestPhotoLink.href = photoUrl;
+                  latestPhotoLink.textContent = window.location.origin + photoUrl;
+                  latestPhotoUrl.style.display = 'block';
                   
                   // Update photo grid
                   photoGrid.innerHTML = photos.map(photo => \`
@@ -227,12 +438,16 @@ class VideoStreamApp extends AppServer {
                         <div>📅 \${new Date(photo.timestamp).toLocaleString()}</div>
                         <div>🆔 \${photo.requestId.substring(0, 8)}...</div>
                         <div>📏 \${Math.round(photo.size / 1024)}KB</div>
+                        <div style="margin-top: 8px; padding: 4px; background: #f0f0f0; border-radius: 3px; font-size: 10px; word-break: break-all;">
+                          🔗 <a href="/api/photo/\${photo.requestId}" target="_blank">/api/photo/\${photo.requestId}</a>
+                        </div>
                       </div>
                     </div>
                   \`).join('');
                 } else {
                   latestPhoto.style.display = 'none';
                   noPhoto.style.display = 'block';
+                  latestPhotoUrl.style.display = 'none';
                   photoGrid.innerHTML = '';
                 }
               } catch (error) {
@@ -253,20 +468,18 @@ class VideoStreamApp extends AppServer {
       `);
     });
 
-    // Health check endpoint
+
     app.get('/health', (req, res) => {
       res.json({ status: 'ok', message: 'MentraOS Video Stream App is running' });
     });
 
-    // Get latest photo image
+    /* CHANGE 7: For latest-photo-image and all-photos endpoints, fast direct access, no sorting needed. */
     app.get('/api/latest-photo-image', (req, res) => {
-      const latestPhoto = Array.from(this.photos.values()).sort((a, b) => b.timestamp - a.timestamp)[0];
-      
-      if (!latestPhoto) {
+      if (photos.length === 0) {
         res.status(404).send('No photo available');
         return;
       }
-
+      const latestPhoto = photos[photos.length - 1];
       res.set({
         'Content-Type': latestPhoto.mimeType,
         'Cache-Control': 'no-cache'
@@ -274,30 +487,36 @@ class VideoStreamApp extends AppServer {
       res.send(latestPhoto.buffer);
     });
 
-    // Get all photos
     app.get('/api/all-photos', (req, res) => {
-      const allPhotos = Array.from(this.photos.values())
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .map(photo => ({
-          requestId: photo.requestId,
-          timestamp: photo.timestamp.getTime(),
-          size: photo.size,
-          mimeType: photo.mimeType
-        }));
-      
-      res.json(allPhotos);
+      // Array already in order, return reverse for latest-first
+      res.json([...photos].reverse().map(photo => ({
+        requestId: photo.requestId,
+        timestamp: photo.timestamp.getTime(),
+        size: photo.size,
+        mimeType: photo.mimeType,
+        prompt: photo.prompt || ''
+      })));
     });
 
-    // Get photo data
+    // New endpoint: Get latest photo with URL and prompt
+    app.get('/api/latest-photo-data', (req, res) => {
+      if (photos.length === 0) {
+        res.status(404).json({ error: 'No photo available' });
+        return;
+      }
+      const latestPhoto = photos[photos.length - 1];
+      res.json({
+        url: `/api/photo/${latestPhoto.requestId}`,
+        prompt: latestPhoto.prompt || ''
+      });
+    });
+
     app.get('/api/photo/:requestId', (req, res) => {
-      const requestId = req.params.requestId;
-      const photo = Array.from(this.photos.values()).find(p => p.requestId === requestId);
-      
+      const photo = photos.find(p => p.requestId === req.params.requestId);
       if (!photo) {
         res.status(404).json({ error: 'Photo not found' });
         return;
       }
-
       res.set({
         'Content-Type': photo.mimeType,
         'Cache-Control': 'no-cache'
@@ -305,9 +524,9 @@ class VideoStreamApp extends AppServer {
       res.send(photo.buffer);
     });
 
-    // Clear all photos
+    // No change—clear is just photos.length = 0 for array
     app.post('/api/clear-photos', (req, res) => {
-      this.photos.clear();
+      photos.length = 0;
       res.json({ message: 'All photos cleared' });
     });
   }
@@ -324,7 +543,7 @@ const app = new VideoStreamApp();
 app.start().then(() => {
   console.log('✅ App server started successfully');
   console.log('📱 Connect your MentraOS glasses to test the app');
-}).catch((error) => {
+}).catch(error => {
   console.error('❌ Failed to start app server:', error);
   process.exit(1);
 });
