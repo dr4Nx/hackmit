@@ -28,6 +28,11 @@ class InferenceBody(BaseModel):
     prompt: str
     image_url: str
 
+class DirectInferenceBody(BaseModel):
+    prompt: str
+    image_base64: str
+    mime_type: str
+
 
 class TitleBody(BaseModel):
     recipe: str
@@ -38,8 +43,35 @@ def get_health():
     return {"ok": True}
 
 
+@app.post("/inference-direct")
+def post_inference_direct(body: DirectInferenceBody):
+    """Optimized endpoint that accepts base64 images directly - NO NETWORK ROUNDTRIP!"""
+    message = client.messages.create(
+        model="claude-3-haiku-20240307",
+        max_tokens=1024,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": body.mime_type,
+                            "data": body.image_base64,
+                        },
+                    },
+                    {"type": "text", "text": body.prompt},
+                ],
+            }
+        ],
+    )
+
+    return {"data": message.content[0].text}
+
 @app.post("/inference")
 def post_inference(body: InferenceBody):
+    """Legacy endpoint that accepts image URLs (slower due to network roundtrip)"""
     message = client.messages.create(
         model="claude-opus-4-1-20250805",
         max_tokens=1024 * 8,
@@ -115,3 +147,12 @@ def get_next_step():
 @app.post("/test-inference")
 def post_test_inference(body: InferenceBody):
     return {"prompt": body.prompt, "image_url": body.image_url}
+
+@app.post("/test-inference-direct")
+def post_test_inference_direct(body: DirectInferenceBody):
+    return {
+        "prompt": body.prompt, 
+        "image_base64_length": len(body.image_base64),
+        "mime_type": body.mime_type,
+        "message": "Base64 image received successfully!"
+    }

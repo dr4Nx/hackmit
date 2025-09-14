@@ -62,10 +62,19 @@ class VideoStreamApp extends AppServer {
    async takePhoto(session, userId, spokenText) {
      try {
        this.logger.info(`📸 Photo request sent for user ${userId}`);
+       const startTime = Date.now();
 
+       // Try to see if there are any camera options
+       this.logger.info(`📸 Camera object type: ${typeof session.camera}`);
+       this.logger.info(`📸 Camera methods: ${Object.getOwnPropertyNames(session.camera)}`);
+       this.logger.info(`📸 Camera prototype methods: ${Object.getOwnPropertyNames(Object.getPrototypeOf(session.camera))}`);
+       
        const photo = await session.camera.requestPhoto();
+       const captureTime = Date.now() - startTime;
 
        this.logger.info(`📸 Photo received, timestamp: ${photo.timestamp}`);
+       this.logger.info(`⏱️  Photo capture took: ${captureTime}ms`);
+       this.logger.info(`📊 Photo size: ${photo.size} bytes, mimeType: ${photo.mimeType}`);
 
        // Store photo data: buffer + metadata + spoken text
        const photoData = {
@@ -81,20 +90,24 @@ class VideoStreamApp extends AppServer {
        };
        photos.push(photoData);
 
-       // UI feedback
-       session.layouts.showTextWall("✅ Photo captured!");
+
 
        this.broadcastPhotoUpdate(photoData, spokenText);
 
-       // NEW: Call Python backend for AI analysis
-       const fullImageUrl = `https://boilingly-unironed-sharell.ngrok-free.app/api/photo/${photo.requestId}`;
-       this.logger.info(`🤖 Starting AI analysis...`);
-       this.logger.info(`📸 Full image URL being sent to Python backend: ${fullImageUrl}`);
-       this.logger.info(`📸 Photo requestId: ${photo.requestId}`);
-       this.logger.info(`📸 Photo exists in photos array: ${photos.some(p => p.requestId === photo.requestId)}`);
-       session.layouts.showTextWall("🤖 Analyzing with AI...");
-       
-       const aiAnalysis = await this.callPythonBackend(fullImageUrl, spokenText);
+      const base64StartTime = Date.now();
+      const imageBase64 = photo.buffer.toString('base64');
+      const base64Time = Date.now() - base64StartTime;
+      
+      this.logger.info(`🤖 Starting AI analysis...`);
+      this.logger.info(`📸 Sending base64 image directly to Python backend`);
+      this.logger.info(`📸 Photo requestId: ${photo.requestId}`);
+      this.logger.info(`📸 Image size: ${imageBase64.length} characters`);
+      this.logger.info(`⏱️  Base64 conversion took: ${base64Time}ms`);
+      
+      const aiStartTime = Date.now();
+      const aiAnalysis = await this.callPythonBackendDirect(imageBase64, spokenText, photo.mimeType);
+      const aiTime = Date.now() - aiStartTime;
+      this.logger.info(`⏱️  AI analysis took: ${aiTime}ms`);
        
        // Update photo data with AI analysis
        photoData.aiAnalysis = aiAnalysis;
@@ -102,12 +115,9 @@ class VideoStreamApp extends AppServer {
        // Broadcast AI analysis update
        this.broadcastAIAnalysis(photoData);
 
-       // UI feedback
-       session.layouts.showTextWall("✅ AI analysis complete!");
 
      } catch (error) {
        this.logger.error(`Error taking photo: ${error}`);
-       session.layouts.showTextWall("❌ Photo failed");
      }
    }
 
@@ -192,7 +202,43 @@ class VideoStreamApp extends AppServer {
   }
 
   /**
-   * Call Python backend for AI analysis
+   * Call Python backend for AI analysis with base64 image (OPTIMIZED)
+   */
+  async callPythonBackendDirect(imageBase64, prompt, mimeType) {
+    try {
+      this.logger.info(`🤖 Calling Python backend for AI analysis (base64 direct)`);
+      this.logger.info(`📸 Image size: ${imageBase64.length} characters`);
+      this.logger.info(`💬 Prompt: ${prompt}`);
+
+      const response = await fetch(`${PYTHON_BACKEND_URL}/inference-direct`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_base64: imageBase64,
+          mime_type: mimeType,
+          prompt: prompt
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Python backend error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      this.logger.info(`AI analysis received: ${data.data.substring(0, 100)}...`);
+      this.logger.info(`FULL AI ANALYSIS RESULT: ${data.data}`);
+      
+      return data.data;
+    } catch (error) {
+      this.logger.error(`❌ Python backend call failed: ${error.message}`);
+      return `AI analysis failed: ${error.message}`;
+    }
+  }
+
+  /**
+   * Call Python backend for AI analysis (LEGACY - with URL)
    */
   async callPythonBackend(imageUrl, prompt) {
     try {
