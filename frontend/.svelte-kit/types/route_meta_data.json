@@ -1,6 +1,0 @@
-{
-	"/": [],
-	"/api/inference": [
-		"src/routes/api/inference/+server.ts"
-	]
-}

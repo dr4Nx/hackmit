@@ -53,10 +53,9 @@ def get_health():
 def post_inference_direct(body: DirectInferenceBody):
     global image_base64
 
-    """Optimized endpoint that accepts base64 images directly - NO NETWORK ROUNDTRIP!"""
     print(f"You are a master chef. Analyze the image and answer the user's question directly. Be specific, concise, and practical. Maximum 1-2 sentences.\n\nCurrent step: {recipe_list[recipe_counter] if recipe_counter >= 0 and recipe_counter < len(recipe_list) else 'Not started yet'}\nFull recipe: {recipe_list if recipe_list else []}\nUser question: {body.prompt}")
     message = client.messages.create(
-        model="claude-3-5-haiku-20241022",
+        model="claude-sonnet-4-20250514",
         max_tokens=64,
         messages=[
             {
@@ -70,7 +69,7 @@ def post_inference_direct(body: DirectInferenceBody):
                             "data": body.image_base64,
                         },
                     },
-                    {"type": "text", "text": f"You are a master chef. Analyze the image and answer the user's question directly. Be specific, concise, and practical. Maximum 1-2 sentences.\n\nCurrent step: {recipe_list[recipe_counter] if recipe_counter >= 0 and recipe_counter < len(recipe_list) else 'Not started yet'}\nFull recipe: {recipe_list if recipe_list else []}\nUser question: {body.prompt}"},
+                    {"type": "text", "text": f"You are a master chef. Analyze the image and answer the user's question directly alongside the provided recipe. If there is no recipe then return a response prompting the user to enter a recipe. Be specific, concise, and practical in your answers. Maximum 1-2 sentences.\n\nCurrent step: {recipe_list[recipe_counter] if recipe_counter >= 0 and recipe_counter < len(recipe_list) else 'Not started yet'}\nFull recipe: {recipe_list if recipe_list else []}\nUser question: {body.prompt}"},
                 ],
             }
         ],
@@ -176,7 +175,7 @@ def get_image():
 
     anyio.from_thread.run(ws_broadcast, "image_changed", {"data": image_base64})
 
-    return {"data", image_base64}
+    return {"data": image_base64}
 
 
 # TODO: delete test-inference
