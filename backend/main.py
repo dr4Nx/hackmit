@@ -8,14 +8,13 @@ import json
 import anyio
 
 
-
-
-
-
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Or specify your frontend URL
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],  # Or specify your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,30 +25,14 @@ config = dotenv_values(".env")
 
 client = anthropic.Anthropic(api_key=config["ANTHROPIC_API_KEY"])
 recipe_list = []
-
-# recipe_list = [
-#         "Start with leftover day-old rice if possible",
-#         "Heat a large pan or wok with a little oil",
-#         "Scramble an egg or two and set them aside",
-#         "Add more oil to the same pan",
-#         "Sauté aromatics like garlic, onion, and ginger until fragrant",
-#         "Toss in diced vegetables such as carrots, peas, or bell peppers",
-#         "Cook vegetables until just tender",
-#         "Add the rice, breaking up any clumps with a spatula",
-#         "Stir-fry rice so the grains get slightly crisp",
-#         "Return the eggs to the pan",
-#         "Add any cooked protein like chicken, shrimp, or tofu",
-#         "Season with soy sauce, sesame oil, and optionally oyster sauce or chili paste",
-#         "Stir everything together until evenly coated and heated through",
-#         "Finish with chopped scallions on top",
-#         "Serve hot"
-#     ]
+image_base64 = None
 recipe_counter = -1
 
 
 class InferenceBody(BaseModel):
     prompt: str
     image_url: str
+
 
 class DirectInferenceBody(BaseModel):
     prompt: str
@@ -68,7 +51,8 @@ def get_health():
 
 @app.post("/inference-direct")
 def post_inference_direct(body: DirectInferenceBody):
-    """Optimized endpoint that accepts base64 images directly - NO NETWORK ROUNDTRIP!"""
+    global image_base64
+
     message = client.messages.create(
         model="claude-3-5-haiku-20241022",
         max_tokens=512,
@@ -84,13 +68,19 @@ def post_inference_direct(body: DirectInferenceBody):
                             "data": body.image_base64,
                         },
                     },
-                    {"type": "text", "text": f"You are an expert chef. please analyse the image and answer the user's query in a succint and helpful manner, take into account cooking techniques and basic cooking knowledge. ANSWER THE QUESTION DIRECTLY, DO NOT RAMBLE OR ADD FLUFF AND BE SUPER SPECIFIC DO NOT BE GENERIC. the user's query is:{body.prompt}"},
+                    {
+                        "type": "text",
+                        "text": f"You are an expert chef. please analyse the image and answer the user's query in a succint and helpful manner, take into account cooking techniques and basic cooking knowledge. ANSWER THE QUESTION DIRECTLY, DO NOT RAMBLE OR ADD FLUFF AND BE SUPER SPECIFIC DO NOT BE GENERIC. the user's query is:{body.prompt}",
+                    },
                 ],
             }
         ],
     )
 
+    image_base64 = body.image_base64
+
     return {"data": message.content[0].text}
+
 
 @app.post("/inference")
 def post_inference(body: InferenceBody):
@@ -159,10 +149,12 @@ def get_curr_idx():
     global recipe_counter
     return {"data": recipe_counter}
 
+
 @app.get("/reset-idx")
 def reset_idx():
     global recipe_counter
     recipe_counter = -1
+
 
 @app.get("/next-step")
 def get_next_step():
@@ -177,27 +169,35 @@ def get_next_step():
 
     return {"data": recipe_list[recipe_counter]}
 
+
+@app.get("/image")
+def get_image():
+    global image_base64
+
+    anyio.from_thread.run(ws_broadcast, "image_changed", {"data": image_base64})
+
+    return {"data", image_base64}
+
+
 # TODO: delete test-inference
 @app.post("/test-inference")
 def post_test_inference(body: InferenceBody):
     return {"prompt": body.prompt, "image_url": body.image_url}
 
+
 @app.post("/test-inference-direct")
 def post_test_inference_direct(body: DirectInferenceBody):
     return {
-        "prompt": body.prompt, 
+        "prompt": body.prompt,
         "image_base64_length": len(body.image_base64),
         "mime_type": body.mime_type,
-        "message": "Base64 image received successfully!"
+        "message": "Base64 image received successfully!",
     }
-
-
-
-
 
 
 # websocket
 ws_clients: set[WebSocket] = set()
+
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
@@ -212,6 +212,7 @@ async def ws_endpoint(ws: WebSocket):
     finally:
         ws_clients.discard(ws)
 
+
 async def ws_broadcast(event: str, data):
     msg = json.dumps({"event": event, "data": data})
     for ws in list(ws_clients):
@@ -219,4 +220,3 @@ async def ws_broadcast(event: str, data):
             await ws.send_text(msg)
         except Exception:
             ws_clients.discard(ws)
-
