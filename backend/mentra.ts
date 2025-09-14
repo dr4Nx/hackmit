@@ -85,7 +85,7 @@ class MentraBridgeServer extends AppServer {
          this.logger.info(`📝 Full spoken text: "${data.text}"`);
 
          // Speak confirmation to glasses
-         this.speakToGlasses(session, "I heard you! Taking a photo now...").catch((error: any) => {
+         this.speakToGlasses(session, "I'm having a look now...").catch((error: any) => {
            this.logger.error(`TTS confirmation error: ${error.message || error}`);
          });
 
