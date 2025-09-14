@@ -13,6 +13,14 @@ const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY ?? (() => { throw new Erro
 const PORT = parseInt(process.env.PORT || '3000');
 const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
 
+// TTS Configuration
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
+const TTS_MODEL = process.env.TTS_MODEL || 'eleven_flash_v2_5';
+const TTS_STABILITY = parseFloat(process.env.TTS_STABILITY || '0.7');
+const TTS_SIMILARITY_BOOST = parseFloat(process.env.TTS_SIMILARITY_BOOST || '0.8');
+const TTS_STYLE = parseFloat(process.env.TTS_STYLE || '0.3');
+const TTS_SPEED = parseFloat(process.env.TTS_SPEED || '0.9');
+
 const photos = []; // Latest photo is always photos[photos.length - 1]
 
 class VideoStreamApp extends AppServer {
@@ -46,6 +54,11 @@ class VideoStreamApp extends AppServer {
        if (spokenText.includes('hey little chef')) {
          this.logger.info("🎤 Voice activation phrase detected!");
          this.logger.info(`📝 Full spoken text: "${data.text}"`);
+
+         // Speak confirmation to glasses
+         this.speakToGlasses(session, "I heard you! Taking a photo now...").catch(error => {
+           this.logger.error(`TTS confirmation error: ${error}`);
+         });
 
          // Broadcast the full spoken text to frontend
          this.broadcastVoiceDetected(data.text);
@@ -114,6 +127,38 @@ class VideoStreamApp extends AppServer {
        
        // Broadcast AI analysis update
        this.broadcastAIAnalysis(photoData);
+
+       // Speak AI analysis to glasses using TTS
+       this.logger.info(`🔊 Speaking AI analysis to glasses...`);
+       
+       // Validate AI analysis before speaking
+       if (!aiAnalysis || typeof aiAnalysis !== 'string' || aiAnalysis.trim().length === 0) {
+         this.logger.error(`❌ AI analysis is invalid: ${aiAnalysis}`);
+         await this.speakToGlasses(session, "Sorry, I couldn't analyze the image properly. Please try again.");
+         return;
+       }
+
+       // First speak a brief status message
+       await this.speakToGlasses(session, "Analysis complete. Here's what I found:");
+       
+       // Then speak the full AI analysis
+       const ttsResult = await this.speakToGlasses(session, aiAnalysis, {
+         model_id: "eleven_flash_v2_5", // Fast model for real-time response
+         voice_settings: {
+           stability: 0.7,
+           similarity_boost: 0.8,
+           style: 0.3,
+           speed: 0.9
+         }
+       });
+
+       if (ttsResult.success) {
+         this.logger.info("✅ AI analysis successfully spoken to glasses");
+       } else {
+         this.logger.error(`❌ Failed to speak AI analysis: ${ttsResult.error}`);
+         // Fallback: speak a simple error message
+         await this.speakToGlasses(session, "Sorry, I couldn't read the analysis aloud, but you can see it on the screen.");
+       }
 
 
      } catch (error) {
@@ -202,6 +247,35 @@ class VideoStreamApp extends AppServer {
   }
 
   /**
+   * Text-to-Speech function using ElevenLabs
+   */
+  async speakToGlasses(session, text, options = {}) {
+    try {
+
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        this.logger.error(`❌ Invalid text for TTS: ${text}`);
+        return { success: false, error: 'Invalid text input' };
+      }
+
+
+      this.logger.info(`🔊 Speaking to glasses: "${text.substring(0, 50)}..."`);
+      
+      const result = await session.audio.speak(text);
+
+      if (result.success) {
+        this.logger.info("TTS successful - Message spoken");
+      } else {
+        this.logger.error(`❌ TTS failed: ${result.error}`);
+      }
+      
+      return result;
+    } catch (error) {
+      this.logger.error(`❌ TTS exception: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Call Python backend for AI analysis with base64 image (OPTIMIZED)
    */
   async callPythonBackendDirect(imageBase64, prompt, mimeType) {
@@ -227,45 +301,18 @@ class VideoStreamApp extends AppServer {
       }
 
       const data = await response.json();
-      this.logger.info(`AI analysis received: ${data.data.substring(0, 100)}...`);
-      this.logger.info(`FULL AI ANALYSIS RESULT: ${data.data}`);
+      this.logger.info(`AI analysis response structure:`, JSON.stringify(data, null, 2));
+      this.logger.info(`AI analysis data type: ${typeof data.data}`);
+      this.logger.info(`AI analysis data value: ${data.data}`);
       
-      return data.data;
-    } catch (error) {
-      this.logger.error(`❌ Python backend call failed: ${error.message}`);
-      return `AI analysis failed: ${error.message}`;
-    }
-  }
-
-  /**
-   * Call Python backend for AI analysis (LEGACY - with URL)
-   */
-  async callPythonBackend(imageUrl, prompt) {
-    try {
-      this.logger.info(`🤖 Calling Python backend for AI analysis`);
-      this.logger.info(`📸 Image URL: ${imageUrl}`);
-      this.logger.info(`💬 Prompt: ${prompt}`);
-
-      const response = await fetch(`${PYTHON_BACKEND_URL}/inference`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image_url: imageUrl,
-          prompt: prompt
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Python backend error: ${response.status} ${response.statusText}`);
+      if (data.data && typeof data.data === 'string') {
+        this.logger.info(`AI analysis received: ${data.data.substring(0, 100)}...`);
+        this.logger.info(`FULL AI ANALYSIS RESULT: ${data.data}`);
+        return data.data;
+      } else {
+        this.logger.error(`❌ Invalid AI analysis response: ${JSON.stringify(data)}`);
+        return `AI analysis failed: Invalid response format`;
       }
-
-      const data = await response.json();
-      this.logger.info(`AI analysis received: ${data.data.substring(0, 100)}...`);
-      this.logger.info(`FULL AI ANALYSIS RESULT: ${data.data}`);
-      
-      return data.data;
     } catch (error) {
       this.logger.error(`❌ Python backend call failed: ${error.message}`);
       return `AI analysis failed: ${error.message}`;

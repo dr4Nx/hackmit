@@ -61,7 +61,7 @@ def post_inference_direct(body: DirectInferenceBody):
                             "data": body.image_base64,
                         },
                     },
-                    {"type": "text", "text": body.prompt},
+                    {"type": "text", "text": f"You are an expert chef. please analyse the iamge and answer the user's query in a succint and helpful manner, take into account cooking techniques and basica cooking knowledge. the user's query is:{body.prompt}"},
                 ],
             }
         ],
