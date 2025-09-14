@@ -108,6 +108,152 @@ def post_inference(body: InferenceBody):
     return {"data": message.content[0].text}
 
 
+@app.post("/process-recipe")
+def process_recipe_input(body: TitleBody) -> dict:
+    """Process recipe input and return unstructured recipe text"""
+    recipe_input = body.recipe
+    try:
+        # Step 1: Classify input
+        classification_message = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=100,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"""Analyze this input and classify it as one of these three options:
+                    - "link": If it's a URL to a recipe website
+                    - "recipe": If it's a complete recipe with ingredients and steps
+                    - "natural_language": If it's a description of what you want to cook (e.g., "I want to make pasta")
+
+                    Input: {recipe_input}
+
+                    Respond with only one word: link, recipe, or natural_language"""
+                }
+            ],
+        )
+        input_type = classification_message.content[0].text.strip().lower()
+        
+        # Step 2: Process based on classification
+        if input_type == "link":
+            # Use web_fetch for direct URL access
+            web_fetch_message = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=2000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""Find the recipe at this URL: {recipe_input}
+                        
+                        Extract the complete recipe and format it as a clean recipe with:
+                        - Ingredients list with measurements
+                        - Step-by-step cooking instructions
+                        - Cooking times and temperatures
+                        - Number of servings
+                        
+                        Provide the actual recipe from the website."""
+                    }
+                ],
+                tools=[{
+                    "type": "web_fetch_20250910",
+                    "name": "web_fetch",
+                    "max_uses": 5
+                }],
+                extra_headers={
+                    "anthropic-beta": "web-fetch-2025-09-10"
+                }
+            )
+            
+            # Extract recipe text from web_fetch response
+            recipe_text = ""
+            for content in web_fetch_message.content:
+                if hasattr(content, 'text') and content.text is not None:
+                    recipe_text += content.text
+            
+        elif input_type == "natural_language":
+            # First search for a recipe URL, then fetch it directly
+            search_message = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=1000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""I want to cook: {recipe_input}
+                        
+                        Find a good recipe URL from a trusted cooking website (like AllRecipes, Food Network, Serious Eats, etc.).
+                        Return just the URL, nothing else."""
+                    }
+                ],
+                tools=[{
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 2
+                }]
+            )
+            
+            # Extract URL from search results
+            search_text = ""
+            for content in search_message.content:
+                if hasattr(content, 'text') and content.text is not None:
+                    search_text += content.text
+            
+            # Find URL in the search results
+            import re
+            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+            urls = re.findall(url_pattern, search_text)
+            
+            if not urls:
+                # Fallback: return the search results as recipe
+                recipe_text = search_text
+            else:
+                # Use the first URL found to fetch the recipe directly
+                recipe_url = urls[0]
+                print(f"DEBUG: Found recipe URL: {recipe_url}")
+                
+                # Fetch the recipe using web_fetch (same as the working test)
+                web_fetch_message = client.messages.create(
+                    model="claude-3-5-haiku-20241022",
+                    max_tokens=2000,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": f"""Find the recipe at this URL: {recipe_url}
+                            
+                            Extract the complete recipe and format it as a clean recipe with:
+                            - Ingredients list with measurements
+                            - Step-by-step cooking instructions
+                            - Cooking times and temperatures
+                            - Number of servings
+                            
+                            Provide the actual recipe from the website."""
+                        }
+                    ],
+                    tools=[{
+                        "type": "web_fetch_20250910",
+                        "name": "web_fetch",
+                        "max_uses": 5
+                    }],
+                    extra_headers={
+                        "anthropic-beta": "web-fetch-2025-09-10"
+                    }
+                )
+                
+                # Extract recipe text from web_fetch response
+                recipe_text = ""
+                for content in web_fetch_message.content:
+                    if hasattr(content, 'text') and content.text is not None:
+                        recipe_text += content.text
+            
+        else:  # input_type == "recipe"
+            # Use input as-is
+            recipe_text = recipe_input
+        
+        return {"data": recipe_text}
+        
+    except Exception as e:
+        print(f"Error processing recipe input: {e}")
+        return {"data": recipe_input}  # Fallback to original input
+
+
 @app.post("/extract-metadata")
 def post_title(body: TitleBody):
     message = client.messages.create(
@@ -122,7 +268,6 @@ def post_title(body: TitleBody):
     )
 
     return {"data": message.content[0].text}
-
 
 @app.post("/extract-steps")
 def post_extract_steps(body: TitleBody):
