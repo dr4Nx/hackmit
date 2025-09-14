@@ -56,7 +56,7 @@ def post_inference_direct(body: DirectInferenceBody):
     print(f"You are a master chef. Analyze the image and answer the user's question directly. Be specific, concise, and practical. Maximum 1-2 sentences.\n\nCurrent step: {recipe_list[recipe_counter] if recipe_counter >= 0 and recipe_counter < len(recipe_list) else 'Not started yet'}\nFull recipe: {recipe_list if recipe_list else []}\nUser question: {body.prompt}")
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=64,
+        max_tokens=48,
         messages=[
             {
                 "role": "user",
