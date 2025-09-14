@@ -175,7 +175,7 @@ def get_image():
 
     anyio.from_thread.run(ws_broadcast, "image_changed", {"data": image_base64})
 
-    return {"data", image_base64}
+    return {"data": image_base64}
 
 
 # TODO: delete test-inference
