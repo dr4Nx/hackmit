@@ -53,9 +53,11 @@ def get_health():
 def post_inference_direct(body: DirectInferenceBody):
     global image_base64
 
+    """Optimized endpoint that accepts base64 images directly - NO NETWORK ROUNDTRIP!"""
+    print(f"You are a master chef. Analyze the image and answer the user's question directly. Be specific, concise, and practical. Maximum 1-2 sentences.\n\nCurrent step: {recipe_list[recipe_counter] if recipe_counter >= 0 and recipe_counter < len(recipe_list) else 'Not started yet'}\nFull recipe: {recipe_list if recipe_list else []}\nUser question: {body.prompt}")
     message = client.messages.create(
         model="claude-3-5-haiku-20241022",
-        max_tokens=512,
+        max_tokens=64,
         messages=[
             {
                 "role": "user",
@@ -68,10 +70,7 @@ def post_inference_direct(body: DirectInferenceBody):
                             "data": body.image_base64,
                         },
                     },
-                    {
-                        "type": "text",
-                        "text": f"You are an expert chef. please analyse the image and answer the user's query in a succint and helpful manner, take into account cooking techniques and basic cooking knowledge. ANSWER THE QUESTION DIRECTLY, DO NOT RAMBLE OR ADD FLUFF AND BE SUPER SPECIFIC DO NOT BE GENERIC. the user's query is:{body.prompt}",
-                    },
+                    {"type": "text", "text": f"You are a master chef. Analyze the image and answer the user's question directly. Be specific, concise, and practical. Maximum 1-2 sentences.\n\nCurrent step: {recipe_list[recipe_counter] if recipe_counter >= 0 and recipe_counter < len(recipe_list) else 'Not started yet'}\nFull recipe: {recipe_list if recipe_list else []}\nUser question: {body.prompt}"},
                 ],
             }
         ],
