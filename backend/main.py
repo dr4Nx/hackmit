@@ -138,6 +138,7 @@ def post_extract_steps(body: TitleBody):
     )
 
     global recipe_list
+    global recipe_counter
     recipe_list = json.loads(message.content[0].text)["recipe"]
     recipe_counter = -1
 
