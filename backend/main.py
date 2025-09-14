@@ -8,28 +8,6 @@ import json
 import anyio
 
 
-
-import base64
-import io
-from PIL import Image
-
-def compress_base64_image(base64_str: str, quality: int = 50) -> str:
-    # Step 1: Decode base64 → bytes
-    image_bytes = base64.b64decode(base64_str)
-    image = Image.open(io.BytesIO(image_bytes))
-
-    # Step 2: Compress (JPEG quality or resize)
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", optimize=True, quality=quality)
-
-    # Step 3: Re-encode back to base64
-    compressed_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    return compressed_base64
-
-
-
-
-
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -97,7 +75,7 @@ def post_inference_direct(body: DirectInferenceBody):
         ],
     )
 
-    image_base64 = compress_base64_image(body.image_base64)
+    image_base64 = body.image_base64
 
     anyio.from_thread.run(ws_broadcast, "image_changed", {"data": image_base64})
 
