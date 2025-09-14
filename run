@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+
+source /Users/pdt/.local/venv/bin/activate
+
+trap 'echo "Stopping..."; kill -INT $(jobs -p); wait' INT
+
+echo "[python] starting..."
+fastapi dev backend/main.py &
+echo "[python] started successfully"
+
+cd backend
+
+echo "[glasses] starting..."
+npm start &
+echo "[glasses] started successfully"
+
+echo "[ngrok] starting..."
+ngrok http --url=boilingly-unironed-sharell.ngrok-free.app 3000 &
+echo "[ngrok] started successfully"
+
+wait
+
