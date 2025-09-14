@@ -1,0 +1,72 @@
+body, html, p, h1, h2, h3 {
+	margin: 0;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+:root {
+	--cwhite: #FFFFFF;
+	--cwhite90: #FFFFFFef;
+	--cwhite75: #FFFFFFbf;
+	--cwhite40: #FFFFFF66;
+	--cwhite20: #FFFFFF33;
+
+	--clight: #F7F7F7;
+	--clight90: #F7F7F7ef;
+	--clight75: #F7F7F7bf;
+	--clight40: #F7F7F766;
+
+	--cdark: #161615;
+	--cdark75: #161615bf;
+	--cdark40: #16161566;
+	--cdark20: #16161533;
+}
+
+
+@font-face {
+    font-family: "Signifier";
+    font-weight: 300;
+    src: url("/fonts/Signifier-Light.ttf") format("truetype");
+	font-display: swap;
+}
+
+@font-face {
+    font-family: "Signifier";
+    font-weight: 400;
+    src: url("/fonts/Signifier-Regular.ttf") format("truetype");
+	font-display: swap;
+}
+
+@font-face {
+    font-family: "Signifier";
+    font-weight: 500;
+    src: url("/fonts/Signifier-Medium.ttf") format("truetype");
+	font-display: swap;
+}
+
+
+
+
+
+@font-face {
+    font-family: "Metric";
+    font-weight: 300;
+    src: url("/fonts/Metric Light.otf") format("opentype");
+	font-display: swap;
+}
+
+@font-face {
+    font-family: "Metric";
+    font-weight: 400;
+    src: url("/fonts/Metric Regular.otf") format("opentype");
+	font-display: swap;
+}
+
+@font-face {
+    font-family: "Metric";
+    font-weight: 500;
+    src: url("/fonts/Metric Medium.otf") format("opentype");
+	font-display: swap;
+}
