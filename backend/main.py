@@ -180,6 +180,19 @@ def get_image():
     return {"data": image_base64}
 
 
+@app.get("/reset")
+def get_reset():
+    global recipe_list
+    global image_base64
+    global recipe_counter
+
+    recipe_list = []
+    image_base64 = None
+    recipe_counter = -1
+
+    return {"ok": True}
+
+
 # TODO: delete test-inference
 @app.post("/test-inference")
 def post_test_inference(body: InferenceBody):
