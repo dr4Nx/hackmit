@@ -1,10 +1,15 @@
 from typing import Union
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import anthropic
 from dotenv import dotenv_values
 import json
+import anyio
+
+
+
+
 
 
 app = FastAPI()
@@ -154,6 +159,10 @@ def get_curr_idx():
     global recipe_counter
     return {"data": recipe_counter}
 
+@app.get("/reset-idx")
+def reset_idx():
+    global recipe_counter
+    recipe_counter = -1
 
 @app.get("/next-step")
 def get_next_step():
@@ -163,6 +172,8 @@ def get_next_step():
     recipe_counter += 1
     if recipe_counter >= len(recipe_list):
         return {"data": "You're done!"}
+
+    anyio.from_thread.run(ws_broadcast, "step_changed", {"index": recipe_counter})
 
     return {"data": recipe_list[recipe_counter]}
 
@@ -179,3 +190,33 @@ def post_test_inference_direct(body: DirectInferenceBody):
         "mime_type": body.mime_type,
         "message": "Base64 image received successfully!"
     }
+
+
+
+
+
+
+# websocket
+ws_clients: set[WebSocket] = set()
+
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    await ws.accept()
+    ws_clients.add(ws)
+    try:
+        # You don't need to receive; keep alive by waiting for messages or close.
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        ws_clients.discard(ws)
+
+async def ws_broadcast(event: str, data):
+    msg = json.dumps({"event": event, "data": data})
+    for ws in list(ws_clients):
+        try:
+            await ws.send_text(msg)
+        except Exception:
+            ws_clients.discard(ws)
+
