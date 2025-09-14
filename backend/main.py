@@ -53,7 +53,6 @@ def get_health():
 def post_inference_direct(body: DirectInferenceBody):
     global image_base64
 
-    """Optimized endpoint that accepts base64 images directly - NO NETWORK ROUNDTRIP!"""
     print(f"You are a master chef. Analyze the image and answer the user's question directly. Be specific, concise, and practical. Maximum 1-2 sentences.\n\nCurrent step: {recipe_list[recipe_counter] if recipe_counter >= 0 and recipe_counter < len(recipe_list) else 'Not started yet'}\nFull recipe: {recipe_list if recipe_list else []}\nUser question: {body.prompt}")
     message = client.messages.create(
         model="claude-3-5-haiku-20241022",
