@@ -20,8 +20,26 @@ config = dotenv_values(".env")
 
 
 client = anthropic.Anthropic(api_key=config["ANTHROPIC_API_KEY"])
-recipe_list = []
-recipe_counter = 0
+#recipe_list = []
+
+recipe_list = [
+        "Start with leftover day-old rice if possible",
+        "Heat a large pan or wok with a little oil",
+        "Scramble an egg or two and set them aside",
+        "Add more oil to the same pan",
+        "Sauté aromatics like garlic, onion, and ginger until fragrant",
+        "Toss in diced vegetables such as carrots, peas, or bell peppers",
+        "Cook vegetables until just tender",
+        "Add the rice, breaking up any clumps with a spatula",
+        "Stir-fry rice so the grains get slightly crisp",
+        "Return the eggs to the pan",
+        "Add any cooked protein like chicken, shrimp, or tofu",
+        "Season with soy sauce, sesame oil, and optionally oyster sauce or chili paste",
+        "Stir everything together until evenly coated and heated through",
+        "Finish with chopped scallions on top",
+        "Serve hot"
+    ]
+recipe_counter = -1
 
 
 class InferenceBody(BaseModel):
@@ -47,8 +65,8 @@ def get_health():
 def post_inference_direct(body: DirectInferenceBody):
     """Optimized endpoint that accepts base64 images directly - NO NETWORK ROUNDTRIP!"""
     message = client.messages.create(
-        model="claude-3-haiku-20240307",
-        max_tokens=1024,
+        model="claude-3-5-haiku-20241022",
+        max_tokens=512,
         messages=[
             {
                 "role": "user",
@@ -61,7 +79,7 @@ def post_inference_direct(body: DirectInferenceBody):
                             "data": body.image_base64,
                         },
                     },
-                    {"type": "text", "text": f"You are an expert chef. please analyse the iamge and answer the user's query in a succint and helpful manner, take into account cooking techniques and basica cooking knowledge. the user's query is:{body.prompt}"},
+                    {"type": "text", "text": f"You are an expert chef. please analyse the image and answer the user's query in a succint and helpful manner, take into account cooking techniques and basic cooking knowledge. ANSWER THE QUESTION DIRECTLY, DO NOT RAMBLE OR ADD FLUFF AND BE SUPER SPECIFIC DO NOT BE GENERIC. the user's query is:{body.prompt}"},
                 ],
             }
         ],
@@ -126,6 +144,7 @@ def post_extract_steps(body: TitleBody):
 
     global recipe_list
     recipe_list = json.loads(message.content[0].text)["recipe"]
+    recipe_counter = -1
 
     return {"data": message.content[0].text}
 
@@ -139,15 +158,13 @@ def get_curr_idx():
 @app.get("/next-step")
 def get_next_step():
     global recipe_counter
+    if not recipe_list:
+        return {"data": "Please enter a recipe to get started"}
     recipe_counter += 1
     if recipe_counter >= len(recipe_list):
         return {"data": "You're done!"}
+
     return {"data": recipe_list[recipe_counter]}
-
-
-
-
-
 
 # TODO: delete test-inference
 @app.post("/test-inference")

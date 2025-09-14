@@ -50,6 +50,9 @@ interface TTSResult {
 
 const photos: PhotoData[] = []; // Latest photo is always photos[photos.length - 1]
 
+// Track TTS calls for debugging
+let lastTTSTime = 0;
+
 class MentraBridgeServer extends AppServer {
   constructor() {
     super({
@@ -74,7 +77,7 @@ class MentraBridgeServer extends AppServer {
 
     const unsubscribe = session.events.onTranscription((data: any) => {
       if (!data.isFinal) return;
-      const spokenText = data.text.toLowerCase().trim().replace(/,/g, "");
+      const spokenText = data.text.toLowerCase().trim().replace(/[^\w\s]/g, "");
       this.logger.debug(`Heard: "${spokenText}"`);
        if (spokenText.includes('hey little chef')) {
          this.logger.info("🎤 Voice activation phrase detected!");
@@ -88,7 +91,17 @@ class MentraBridgeServer extends AppServer {
          this.takePhoto(session, userId, data.text).catch((error: any) => {
            this.logger.error(`Photo capture error: ${error.message || error}`);
          });
-       }
+       } else if (spokenText.includes('next step') || spokenText.includes('lets start')) {
+         this.logger.info("Next step command detected!");
+         this.logger.info(`Full spoken text: "${data.text}"`);
+
+         this.getNextStep(session, userId).catch((error: any) => {
+           this.logger.error(`Next step error: ${error.message || error}`);
+         });
+       } else if (spokenText.includes("stop") || spokenText.includes("quiet") || spokenText.includes("shut up")) {
+          session.audio.stopAudio();
+          return;
+      }
     });
 
     this.addCleanupHandler(unsubscribe);
@@ -157,9 +170,6 @@ class MentraBridgeServer extends AppServer {
          return;
        }
 
-       // First speak a brief status message
-       await this.speakToGlasses(session, "Analysis complete. Here's what I found:");
-
        // Then speak the full AI analysis
        const ttsResult = await this.speakToGlasses(session, aiAnalysis, {
          model_id: "eleven_flash_v2_5", // Fast model for real-time response
@@ -176,7 +186,7 @@ class MentraBridgeServer extends AppServer {
        } else {
          this.logger.error(`❌ Failed to speak AI analysis: ${ttsResult.error}`);
          // Fallback: speak a simple error message
-         await this.speakToGlasses(session, "Sorry, I couldn't read the analysis aloud, but you can see it on the screen.");
+         await this.speakToGlasses(session, "Sorry, I couldn't read the analysis aloud");
        }
 
 
@@ -185,6 +195,60 @@ class MentraBridgeServer extends AppServer {
      }
    }
 
+   async getNextStep(session: any, userId: string): Promise<void> {
+     try {
+       this.logger.info(`📋 Getting next step for user ${userId}`);
+       
+       // Call Python backend /next-step endpoint
+       const response = await fetch(`${PYTHON_BACKEND_URL}/next-step`, {
+         method: 'GET',
+         headers: {
+           'Content-Type': 'application/json',
+         }
+       });
+
+       if (!response.ok) {
+         throw new Error(`Python backend error: ${response.status} ${response.statusText}`);
+       }
+
+       const data = await response.json();
+       this.logger.info(`Next step response: ${JSON.stringify(data)}`);
+       
+       // Extract the data field from the response
+       const nextStepData = data.data;
+       
+       if (!nextStepData || typeof nextStepData !== 'string') {
+         this.logger.error(`❌ Invalid next step response: ${JSON.stringify(data)}`);
+         await this.speakToGlasses(session, "Sorry, I couldn't get the next step. Please try again.");
+         return;
+       }
+
+       // Speak the next step to glasses
+       this.logger.info(`🔊 Speaking next step to glasses: "${nextStepData}"`);
+       
+       const ttsResult = await this.speakToGlasses(session, nextStepData, {
+         model_id: "eleven_flash_v2_5", // Fast model for real-time response
+         voice_settings: {
+           stability: 0.7,
+           similarity_boost: 0.8,
+           style: 0.3,
+           speed: 0.9
+         }
+       });
+
+       if (ttsResult.success) {
+         this.logger.info("✅ Next step successfully spoken to glasses");
+       } else {
+         this.logger.error(`❌ Failed to speak next step: ${ttsResult.error}`);
+         // Fallback: speak a simple error message
+         await this.speakToGlasses(session, "Sorry, I couldn't read the next step aloud.");
+       }
+
+     } catch (error: any) {
+       this.logger.error(`Error getting next step: ${error.message || error}`);
+       await this.speakToGlasses(session, "Sorry, I couldn't get the next step. Please try again.");
+     }
+   }
 
   async onStop(sessionId: string, userId: string, reason: string): Promise<void> {
     this.logger.info(`Session stopped for user ${userId}, reason: ${reason}`);
@@ -200,7 +264,12 @@ class MentraBridgeServer extends AppServer {
         return { success: false, error: 'Invalid text input' };
       }
 
-      this.logger.info(`🔊 Speaking to glasses: "${text.substring(0, 50)}..."`);
+      // Log text length and timing for debugging
+      const now = Date.now();
+      const timeSinceLastTTS = now - lastTTSTime;
+      lastTTSTime = now;
+      
+      this.logger.info(`🔊 Speaking to glasses: "${text.substring(0, 50)}..." (${text.length} chars, ${timeSinceLastTTS}ms since last TTS)`);
 
       const result = await session.audio.speak(text);
 
@@ -208,11 +277,15 @@ class MentraBridgeServer extends AppServer {
         this.logger.info("TTS successful - Message spoken");
       } else {
         this.logger.error(`❌ TTS failed: ${result.error}`);
+        this.logger.error(`❌ TTS error details:`, result);
+        this.logger.error(`❌ TTS result type: ${typeof result}`);
+        this.logger.error(`❌ TTS result keys: ${Object.keys(result || {}).join(', ')}`);
       }
 
       return result;
     } catch (error: any) {
       this.logger.error(`❌ TTS exception: ${error.message}`);
+      this.logger.error(`❌ TTS exception details:`, error);
       return { success: false, error: error.message };
     }
   }
@@ -347,6 +420,7 @@ app.start().then(() => {
   console.log('✅ Mentra Bridge Server started successfully');
   console.log('📱 Connect your MentraOS glasses to start processing');
   console.log('🎤 Say "hey little chef" to take photos with AI analysis');
+  console.log('📋 Say "next step" to get the next recipe step');
 }).catch(error => {
   console.error('❌ Failed to start bridge server:', error);
   process.exit(1);
