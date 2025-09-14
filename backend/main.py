@@ -98,6 +98,12 @@ def post_extract_steps(body: TitleBody):
     return {"data": message.content[0].text}
 
 
+@app.get("/curr-idx")
+def get_curr_idx():
+    global recipe_counter
+    return {"data": recipe_counter}
+
+
 @app.get("/next-step")
 def get_next_step():
     global recipe_counter
