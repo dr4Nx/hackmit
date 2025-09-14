@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-source /Users/pdt/.local/venv/bin/activate
+#source /Users/pdt/.local/venv/bin/activate
 
 trap 'echo "Stopping..."; kill -INT $(jobs -p); wait' INT
 

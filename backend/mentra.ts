@@ -34,6 +34,7 @@ interface PhotoData {
 }
 
 interface TTSOptions {
+  voice_id?: string;
   model_id?: string;
   voice_settings?: {
     stability?: number;
@@ -271,7 +272,17 @@ class MentraBridgeServer extends AppServer {
       
       this.logger.info(`🔊 Speaking to glasses: "${text.substring(0, 50)}..." (${text.length} chars, ${timeSinceLastTTS}ms since last TTS)`);
 
-      const result = await session.audio.speak(text);
+      const result = await session.audio.speak(text, {
+          voice_id: "AXdMgz6evoL7OPd7eU12", // ElevenLabs voice ID
+          model_id: "eleven_flash_v2_5",       // Optional specific model
+          voice_settings: {
+            stability: 0.7,
+            similarity_boost: 0.8,
+            style: 0.3,
+            speed: 1.1
+          }
+        }
+      );
 
       if (result.success) {
         this.logger.info("TTS successful - Message spoken");
