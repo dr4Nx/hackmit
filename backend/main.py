@@ -77,7 +77,7 @@ def post_inference_direct(body: DirectInferenceBody):
 
     image_base64 = body.image_base64
 
-    anyio.from_thread.run(ws_broadcast, "image_changed", {"data": image_base64})
+    anyio.from_thread.run(ws_broadcast, "image_changed", {"data": image_base64, "text": message.content[0].text})
 
     return {"data": message.content[0].text}
 
