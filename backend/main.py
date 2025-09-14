@@ -73,7 +73,7 @@ def post_inference_direct(body: DirectInferenceBody):
 def post_inference(body: InferenceBody):
     """Legacy endpoint that accepts image URLs (slower due to network roundtrip)"""
     message = client.messages.create(
-        model="claude-opus-4-1-20250805",
+        model="claude-3-5-haiku-20241022",
         max_tokens=1024 * 8,
         messages=[
             {
@@ -98,7 +98,7 @@ def post_inference(body: InferenceBody):
 @app.post("/extract-metadata")
 def post_title(body: TitleBody):
     message = client.messages.create(
-        model="claude-opus-4-1-20250805",
+        model="claude-3-5-haiku-20241022",
         max_tokens=1024 * 8,
         messages=[
             {
@@ -114,7 +114,7 @@ def post_title(body: TitleBody):
 @app.post("/extract-steps")
 def post_extract_steps(body: TitleBody):
     message = client.messages.create(
-        model="claude-opus-4-1-20250805",
+        model="claude-3-5-haiku-20241022",
         max_tokens=1024 * 8,
         messages=[
             {
