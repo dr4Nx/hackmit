@@ -1,5 +1,5 @@
 
-<img width="1500" height="680" alt="Frame 2" src="https://github.com/user-attachments/assets/ce7c60c8-a236-4228-8f98-2a8dc33c9572" />
+<p align="center"><img width="500" height="680" alt="Frame 2" src="https://github.com/user-attachments/assets/ce7c60c8-a236-4228-8f98-2a8dc33c9572" /></p>
 
 # HackMIT 2025: Remy
 
@@ -9,11 +9,27 @@ Tim, Adi, Nyx & Evan
 
 <h3><a href="https://youtu.be/CMAqN5V02yY">Demo</a></h3>
 
-<hr>
-
 Remy is what all four of us wished we had when we first moved into our college apartments and had to cook for ourselves for the very first time. Between incessantly calling our parents and furiously googling recipes and ingredients, so much of our time and energy is spent on preparing our own meals, clearly a muscle we have not had the chance to exercise this intensely before coming to college. Despite this steep learning curve, cooking is a life skill. After all, food is one of the basic necessities of life. And what better time to learn how to cook than in college, a period in life where we are indeed expected to learn?
 
 Not only that, we believe that learning should be fun. We believe that cooking should be fun. That got us thinking: what’s more fun than learning how to cook with a rat in your hat pulling your hair controlling you like a puppet? But we don’t have a rat, or a hat, or Linguini’s anatomy, drat. But we do have talking smart glasses...
+
+
+### Screenshots
+
+
+<p>
+<img width="49%" alt="Screenshot 2025-09-15 at 18 39 54" src="https://github.com/user-attachments/assets/3d70be35-345f-47c7-903b-868076050bbf" />
+<img width="49%" alt="Screenshot 2025-09-15 at 18 40 59" src="https://github.com/user-attachments/assets/81207c8d-68a6-41b0-be15-1a283212b201" />
+  
+</p>
+
+<p>
+<img width="49%" alt="Screenshot 2025-09-15 at 18 43 39" src="https://github.com/user-attachments/assets/1374d4b6-ea5a-4308-ad6a-f3a7fb342bce" />  
+<img width="49%" height="914" alt="Screenshot 2025-09-15 at 18 48 16" src="https://github.com/user-attachments/assets/1f07cf47-f568-483e-b888-4442cdfefa95" />
+</p>
+
+
+
 
 
 ### Technical Details
